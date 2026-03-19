@@ -33,6 +33,7 @@ import { LocalAgentsDocPanel } from '@/components/panels/local-agents-doc-panel'
 import { ChannelsPanel } from '@/components/panels/channels-panel'
 import { DebugPanel } from '@/components/panels/debug-panel'
 import { SecurityAuditPanel } from '@/components/panels/security-audit-panel'
+import { FlightHistoryPanel } from '@/components/panels/flight-history-panel'
 import { NodesPanel } from '@/components/panels/nodes-panel'
 import { ExecApprovalPanel } from '@/components/panels/exec-approval-panel'
 import { ChatPagePanel } from '@/components/panels/chat-page-panel'
@@ -42,6 +43,7 @@ import { shouldRedirectDashboardToHttps } from '@/lib/browser-security'
 import { useTranslations } from 'next-intl'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { LocalModeBanner } from '@/components/layout/local-mode-banner'
+import { StatsBar } from '@/components/dashboard/stats-bar'
 import { UpdateBanner } from '@/components/layout/update-banner'
 import { OpenClawUpdateBanner } from '@/components/layout/openclaw-update-banner'
 import { OpenClawDoctorBanner } from '@/components/layout/openclaw-doctor-banner'
@@ -49,6 +51,7 @@ import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard'
 import { Loader } from '@/components/ui/loader'
 import { ProjectManagerModal } from '@/components/modals/project-manager-modal'
 import { ExecApprovalOverlay } from '@/components/modals/exec-approval-overlay'
+import { LaunchAgentModal } from '@/components/modals/launch-agent-modal'
 import { useWebSocket } from '@/lib/websocket'
 import { useServerEvents } from '@/lib/use-server-events'
 import { completeNavigationTiming } from '@/lib/navigation-metrics'
@@ -88,6 +91,7 @@ export default function Home() {
   const tp = useTranslations('page')
   const tc = useTranslations('common')
   const { activeTab, setActiveTab, setCurrentUser, setDashboardMode, setGatewayAvailable, setLocalSessionsAvailable, setCapabilitiesChecked, setSubscription, setDefaultOrgName, setUpdateAvailable, setOpenclawUpdate, showOnboarding, setShowOnboarding, liveFeedOpen, toggleLiveFeed, showProjectManagerModal, setShowProjectManagerModal, fetchProjects, setChatPanelOpen, bootComplete, setBootComplete, setAgents, setSessions, setProjects, setInterfaceMode, setMemoryGraphAgents, setSkillsData } = useMissionControl()
+  const [showLaunchModal, setShowLaunchModal] = useState(false)
 
   // Sync URL → Zustand activeTab
   const pathname = usePathname()
@@ -385,6 +389,7 @@ export default function Home() {
         {!showOnboarding && (
           <>
             <HeaderBar />
+            <StatsBar />
             <LocalModeBanner />
             <UpdateBanner />
             <OpenClawUpdateBanner />
@@ -444,7 +449,29 @@ export default function Home() {
         />
       )}
 
+      {/* Launch Agent Modal */}
+      <LaunchAgentModal
+        open={showLaunchModal}
+        onClose={() => setShowLaunchModal(false)}
+        onLaunched={() => {
+          setShowLaunchModal(false)
+        }}
+      />
+
       <OnboardingWizard />
+
+      {/* Floating Launch Agent button */}
+      {!showOnboarding && (
+        <button
+          onClick={() => setShowLaunchModal(true)}
+          className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:brightness-110 transition-all flex items-center justify-center md:bottom-8 md:right-8"
+          title="Launch Agent"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+            <path d="M8 2v12M8 2l-3 3M8 2l3 3" />
+          </svg>
+        </button>
+      )}
     </div>
   )
 }
@@ -563,6 +590,8 @@ function ContentRouter({ tab }: { tab: string }) {
     case 'nodes':
       if (isLocal) return <LocalModeUnavailable panel={tab} />
       return <NodesPanel />
+    case 'flight-log':
+      return <FlightHistoryPanel />
     case 'security':
       return <SecurityAuditPanel />
     case 'debug':

@@ -1268,6 +1268,33 @@ const migrations: Migration[] = [
     up(db: Database.Database) {
       db.exec(`ALTER TABLE agents ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`)
     }
+  },
+  {
+    id: '043_flight_history',
+    up(db: Database.Database) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS flight_history (
+          id TEXT PRIMARY KEY,
+          agent_label TEXT,
+          repo_path TEXT,
+          task_prompt TEXT,
+          started_at TEXT,
+          ended_at TEXT,
+          status TEXT,
+          exit_code INTEGER,
+          output_summary TEXT,
+          tokens_used INTEGER,
+          estimated_cost REAL,
+          commits_made INTEGER,
+          files_changed INTEGER,
+          model TEXT,
+          pid INTEGER
+        )
+      `)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_flight_history_status ON flight_history(status)`)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_flight_history_started_at ON flight_history(started_at)`)
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_flight_history_repo_path ON flight_history(repo_path)`)
+    }
   }
 ]
 

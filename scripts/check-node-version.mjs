@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const MIN_NODE_MAJOR = 22
+const MIN_NODE_MAJOR = 20
 
 const current = process.versions.node
 const currentMajor = Number.parseInt(current.split('.')[0] || '', 10)

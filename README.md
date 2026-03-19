@@ -1,8 +1,8 @@
 <div align="center">
 
-# Mission Control
+# Flightdeck
 
-**The open-source dashboard for AI agent orchestration.**
+**Local command center for AI agent orchestration.**
 
 Manage agent fleets, track tasks, monitor costs, and orchestrate workflows — all from a single pane of glass.
 
@@ -12,17 +12,17 @@ Manage agent fleets, track tasks, monitor costs, and orchestrate workflows — a
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL-003B57?logo=sqlite&logoColor=white)](https://sqlite.org/)
 
-![Mission Control Dashboard](docs/mission-control-overview.png)
+![Flightdeck Dashboard](docs/mission-control-overview.png)
 
 </div>
 
 ---
 
-> **Alpha Software** — Mission Control is under active development. APIs, database schemas, and configuration formats may change between releases. Review the [known limitations](#known-limitations) and [security considerations](#security-considerations) before deploying to production.
+> **Alpha Software** — Flightdeck is under active development. APIs, database schemas, and configuration formats may change between releases. Review the [known limitations](#known-limitations) and [security considerations](#security-considerations) before deploying to production.
 
-## Why Mission Control?
+## Why Flightdeck?
 
-Running AI agents at scale means juggling sessions, tasks, costs, and reliability across multiple models and channels. Mission Control gives you:
+Running AI agents at scale means juggling sessions, tasks, costs, and reliability across multiple models and channels. Flightdeck gives you:
 
 - **32 panels** — Tasks, agents, skills, logs, tokens, memory, security, cron, alerts, webhooks, pipelines, and more
 - **Real-time everything** — WebSocket + SSE push updates, smart polling that pauses when you're away
@@ -75,7 +75,7 @@ Additional options: `-Port 8080`, `-SkipOpenClaw`. Requires Node.js 22+ and pnpm
 ### Manual Setup
 
 > **Requires [pnpm](https://pnpm.io/installation)** and **Node.js 22.x (LTS, recommended) or 24.x**.
-> Mission Control is validated on Node 22 (primary CI/LTS) and supports Node 24 for local dev and deploys. Use `nvm use 22` (or `nvm use 24`) before installing or starting the app.
+> Flightdeck is validated on Node 22 (primary CI/LTS) and supports Node 24 for local dev and deploys. Use `nvm use 22` (or `nvm use 24`) before installing or starting the app.
 
 ```bash
 git clone https://github.com/builderz-labs/mission-control.git
@@ -91,11 +91,11 @@ For CI/automation, set `AUTH_USER` and `AUTH_PASS` env vars to seed the admin fr
 
 ## Gateway Optional Mode (Standalone Deployment)
 
-Mission Control can run in standalone mode without a gateway connection. This is useful when:
+Flightdeck can run in standalone mode without a gateway connection. This is useful when:
 
 - Deploying on a VPS with firewall rules blocking non-standard WebSocket ports (18789/18790)
 - Testing UI/core workflows without a running gateway
-- Running Mission Control primarily for project/task operations
+- Running Flightdeck primarily for project/task operations
 
 Enable with:
 
@@ -198,7 +198,7 @@ bash scripts/security-audit.sh
 ### Agent Management
 Monitor agent status, configure models, view heartbeats, and manage the full agent lifecycle from registration to retirement. Agent detail modal with compact overview, inline model selector, and editable sub-agent configuration.
 
-![Mission Control Agents Panel](docs/mission-control-agents.png)
+![Flightdeck Agents Panel](docs/mission-control-agents.png)
 
 ### Task Board
 Kanban board with six columns (inbox → assigned → in progress → review → quality review → done), drag-and-drop, priority levels, assignments, threaded comments, and inline sub-agent spawning.
@@ -216,13 +216,13 @@ Scheduled tasks for database backups, stale record cleanup, agent heartbeat moni
 Create recurring tasks with natural language like "every morning at 9am" or "every 2 hours". The built-in schedule parser (zero dependencies) converts expressions to cron and stores them in task metadata. A template-clone pattern keeps the original task as a template and spawns dated child tasks (e.g., "Daily Report - Mar 07") on schedule. Each spawned task gets its own Aegis quality gate.
 
 ### Direct CLI Integration
-Connect Claude Code, Codex, or any CLI tool directly to Mission Control without requiring a gateway. Register connections, send heartbeats with inline token reporting, and auto-register agents.
+Connect Claude Code, Codex, or any CLI tool directly to Flightdeck without requiring a gateway. Register connections, send heartbeats with inline token reporting, and auto-register agents.
 
 ### Claude Code Session Tracking
 Automatically discovers and tracks local Claude Code sessions by scanning `~/.claude/projects/`. Extracts token usage, model info, message counts, cost estimates, and active status from JSONL transcripts. Scans every 60 seconds via the background scheduler.
 
 ### Claude Code Task Bridge
-Read-only integration that surfaces Claude Code team tasks and team configs on the Mission Control dashboard. Scans `~/.claude/tasks/<team>/<N>.json` for structured task data (subject, status, owner, blockers) and `~/.claude/teams/<name>/config.json` for team metadata (members, lead agent, model assignments). Visible in both the Task Board (collapsible section) and Cron Management (teams overview) panels.
+Read-only integration that surfaces Claude Code team tasks and team configs on the Flightdeck dashboard. Scans `~/.claude/tasks/<team>/<N>.json` for structured task data (subject, status, owner, blockers) and `~/.claude/teams/<name>/config.json` for team metadata (members, lead agent, model assignments). Visible in both the Task Board (collapsible section) and Cron Management (teams overview) panels.
 
 ### GitHub Issues Sync
 Inbound sync from GitHub repositories with label and assignee mapping. Synced issues appear on the task board alongside agent-created tasks.
@@ -242,7 +242,7 @@ Session-threaded inter-agent communication via the comms API (`a2a:*`, `coord:*`
 ### Memory Knowledge Graph
 Explore agent knowledge through the Memory Browser, filesystem-backed memory tree, and interactive relationship graph for sessions, memory chunks, and linked knowledge files.
 
-![Mission Control Memory Graph](docs/mission-control-memory-graph.png)
+![Flightdeck Memory Graph](docs/mission-control-memory-graph.png)
 
 ### Onboarding Wizard
 Guided first-run setup wizard that walks new users through five steps: Welcome (system capabilities detection), Credentials (verify AUTH_PASS and API_KEY strength), Agent Setup (gateway connection or local Claude Code discovery), Security Scan (automated configuration audit with pass/fail checks), and Get Started (quick links to key panels). Automatically appears on first login and can be re-launched from Settings. Progress is persisted per-user so you can resume where you left off.
@@ -607,7 +607,7 @@ To add a new workspace/client instance, use the `/api/super/tenants` endpoint or
 
 ### Projects and Ticket Prefixes
 
-Mission Control supports multi-project task organization per workspace:
+Flightdeck supports multi-project task organization per workspace:
 
 - Create/manage projects via Task Board → `Projects`.
 - Each project has its own ticket prefix and counter.
@@ -616,7 +616,7 @@ Mission Control supports multi-project task organization per workspace:
 
 ### Memory Scope Clarification
 
-- **Agent profile → Memory tab**: per-agent working memory stored in Mission Control DB (`working_memory`).
+- **Agent profile → Memory tab**: per-agent working memory stored in Flightdeck DB (`working_memory`).
 - **Memory Browser page**: workspace/local filesystem memory tree under `OPENCLAW_MEMORY_DIR`.
 
 ## Deployment
