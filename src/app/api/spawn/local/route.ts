@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { spawn, ChildProcess } from 'child_process'
 import { z } from 'zod'
+import fs from 'node:fs'
+import path from 'node:path'
 import { requireRole } from '@/lib/auth'
 import { validateBody } from '@/lib/validation'
 import { getDatabase, logAuditEvent } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { config } from '@/lib/config'
 
 const localSpawnSchema = z.object({
   task: z.string().min(1, 'Task is required'),
@@ -77,26 +80,37 @@ export async function POST(request: NextRequest) {
       child.stdin.end()
     }
 
+    // Set up log file for SSE streaming
+    const flightsDir = path.join(config.dataDir, 'flights')
+    try { fs.mkdirSync(flightsDir, { recursive: true }) } catch { /* exists */ }
+    const logPath = path.join(flightsDir, `${spawnId}.log`)
+    const logStream = fs.createWriteStream(logPath, { flags: 'a' })
+
     // Collect output in background
     let stdout = ''
     let stderr = ''
 
     if (child.stdout) {
       child.stdout.on('data', (chunk: Buffer) => {
-        stdout += chunk.toString()
+        const text = chunk.toString()
+        stdout += text
         // Cap buffer to prevent memory issues
         if (stdout.length > 50000) {
           stdout = stdout.slice(-50000)
         }
+        // Write to log file for SSE streaming
+        try { logStream.write(text) } catch { /* noop */ }
       })
     }
 
     if (child.stderr) {
       child.stderr.on('data', (chunk: Buffer) => {
-        stderr += chunk.toString()
+        const text = chunk.toString()
+        stderr += text
         if (stderr.length > 50000) {
           stderr = stderr.slice(-50000)
         }
+        try { logStream.write(`[stderr] ${text}`) } catch { /* noop */ }
       })
     }
 
@@ -119,6 +133,7 @@ export async function POST(request: NextRequest) {
       }
 
       activeProcesses.delete(spawnId)
+      try { logStream.end() } catch { /* noop */ }
       logger.info({ spawnId, pid, exitCode, status }, 'Local spawn process exited')
     })
 

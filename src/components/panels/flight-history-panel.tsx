@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { useSmartPoll } from '@/lib/use-smart-poll'
+import { AgentChatPanel } from '@/components/panels/agent-chat-panel'
 
 interface Flight {
   id: string
@@ -79,6 +80,7 @@ export function FlightHistoryPanel() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [viewingLogsId, setViewingLogsId] = useState<string | null>(null)
   const [page, setPage] = useState(0)
   const limit = 50
 
@@ -144,6 +146,13 @@ export function FlightHistoryPanel() {
         </select>
       </div>
 
+      {/* Live log viewer */}
+      {viewingLogsId && (
+        <div className="h-[400px] rounded-lg border border-border overflow-hidden">
+          <AgentChatPanel spawnId={viewingLogsId} onClose={() => setViewingLogsId(null)} />
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <div className="space-y-2">
@@ -175,6 +184,7 @@ export function FlightHistoryPanel() {
                   flight={flight}
                   expanded={expandedId === flight.id}
                   onToggle={() => setExpandedId(expandedId === flight.id ? null : flight.id)}
+                  onViewLogs={() => setViewingLogsId(flight.id)}
                 />
               ))}
             </tbody>
@@ -210,7 +220,7 @@ export function FlightHistoryPanel() {
   )
 }
 
-function FlightRow({ flight, expanded, onToggle }: { flight: Flight; expanded: boolean; onToggle: () => void }) {
+function FlightRow({ flight, expanded, onToggle, onViewLogs }: { flight: Flight; expanded: boolean; onToggle: () => void; onViewLogs: () => void }) {
   return (
     <>
       <tr
@@ -258,12 +268,19 @@ function FlightRow({ flight, expanded, onToggle }: { flight: Flight; expanded: b
                   </p>
                 </div>
               )}
-              <div className="flex gap-4 text-muted-foreground">
+              <div className="flex items-center gap-4 text-muted-foreground">
                 {flight.model && <span>Model: <span className="text-foreground">{flight.model}</span></span>}
                 {flight.tokens_used != null && <span>Tokens: <span className="text-foreground">{flight.tokens_used.toLocaleString()}</span></span>}
                 {flight.commits_made != null && <span>Commits: <span className="text-foreground">{flight.commits_made}</span></span>}
                 {flight.files_changed != null && <span>Files changed: <span className="text-foreground">{flight.files_changed}</span></span>}
                 {flight.exit_code != null && <span>Exit code: <span className="text-foreground">{flight.exit_code}</span></span>}
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={(e) => { e.stopPropagation(); onViewLogs() }}
+                >
+                  View Logs
+                </Button>
               </div>
             </div>
           </td>
