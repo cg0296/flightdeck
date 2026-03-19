@@ -1,0 +1,322 @@
+Read PROGRESS.md and DECISIONS.md for context from v1 build. Read CLAUDE.md for project structure. This is Flightdeck v2. Execute every task below in order.
+
+CRITICAL CONTEXT: This app runs on Windows. The Claude CLI is at:
+"C:\Users\Curt\.vscode\extensions\anthropic.claude-code-2.1.78-win32-x64\resources\native-binary\claude.exe"
+
+=== PRIORITY 1: KILL BUTTON + SESSION DETECTION FIXES ===
+
+1. LOCAL KILL ENDPOINT: Create/modify POST /api/sessions/[id]/kill to run taskkill on Windows:
+- Accept { pid: number } or resolve PID from session ID
+- Run: taskkill /pid {pid} /f via child_process.spawn
+- Return success/failure
+- Do NOT route through OpenClaw gateway — this is local only
+
+2. KILL BUTTON IN UI: Add a red "Stop" button on every active session in:
+- Overview page (Session Workbench)
+- Chat page (session list)
+- Confirmation dialog: "Stop this agent? This will kill the process immediately."
+
+3. FIX ACTIVE DETECTION: A session should only show as "active" (green dot) if BOTH:
+- The JSONL file was modified in the last 5 minutes
+- A matching claude.exe process exists with a matching PID or working directory
+- Otherwise mark as "Landed" (completed) or "Lost Contact" (file exists but no process)
+
+4. BULK KILL: Add "Stop All Agents" button in the stats bar. Runs taskkill /im claude.exe /f. Shows confirmation first.
+
+=== PRIORITY 2: SUPERVISOR AGENT SYSTEM ===
+
+5. SUPERVISOR CONFIG TABLE: New SQLite table:
+```sql
+CREATE TABLE supervisor_config (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  sub_agents TEXT NOT NULL, -- JSON array of {name, cwd, prompt_file, model, order, depends_on}
+  schedule TEXT, -- cron expression for recurring
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT
+);
+```
+
+6. SUPERVISOR SPAWN LOGIC: POST /api/supervisor/launch:
+- Reads the supervisor config
+- Spawns a supervisor Claude process that:
+  - Reads the master plan (sub_agents array)
+  - Spawns sub-agents as child Claude CLI processes based on order and depends_on
+  - Monitors each sub-agent by watching their JSONL files and PROGRESS.md
+  - When a sub-agent finishes (process exits), checks depends_on to see if next agent should launch
+  - Updates FlightDeck via internal API calls (POST /api/transponder/ping)
+  - On completion of all sub-agents, sends final report
+
+7. SUB-AGENT LIFECYCLE TRACKING: New SQLite table:
+```sql
+CREATE TABLE sortie (
+  id TEXT PRIMARY KEY,
+  supervisor_config_id TEXT,
+  name TEXT,
+  status TEXT DEFAULT 'active', -- active, completed, failed, aborted
+  started_at TEXT,
+  ended_at TEXT,
+  total_cost REAL DEFAULT 0,
+  FOREIGN KEY (supervisor_config_id) REFERENCES supervisor_config(id)
+);
+
+CREATE TABLE sortie_agent (
+  id TEXT PRIMARY KEY,
+  sortie_id TEXT,
+  agent_name TEXT,
+  cwd TEXT,
+  prompt TEXT,
+  model TEXT,
+  pid INTEGER,
+  session_id TEXT,
+  status TEXT DEFAULT 'queued', -- queued, launched, running, landed, mayday
+  order_index INTEGER,
+  depends_on TEXT, -- JSON array of agent names
+  started_at TEXT,
+  ended_at TEXT,
+  tokens_used INTEGER DEFAULT 0,
+  estimated_cost REAL DEFAULT 0,
+  exit_code INTEGER,
+  output_summary TEXT,
+  FOREIGN KEY (sortie_id) REFERENCES sortie(id)
+);
+```
+
+8. SUPERVISOR DASHBOARD PANEL: New panel src/components/panels/supervisor-panel.tsx:
+- List of configured supervisors with "Launch" button
+- Active sorties with tree view: supervisor → sub-agents with status indicators
+- Progress bar per sub-agent and overall sortie
+- Cost rollup per sortie
+- "Abort Sortie" button (kills all sub-agents)
+
+9. SORTIE GROUPING IN OVERVIEW: On the Overview page, add a "Sorties" section above Session Workbench:
+- Shows active sorties with overall progress
+- Collapsible to see sub-agent details
+- Click to navigate to supervisor panel
+
+10. SUPERVISOR TEMPLATES: Pre-configured sortie templates. Create default templates:
+- "Golteris Full Build": Agent 1 (backend bugs, golteris-platform) → Agent 2 (frontend features) → Agent 3 (QA tests)
+- "CTS Analysis": Agent 1 (pull data) → Agent 2 (analyze) → Agent 3 (generate report)
+- Custom template creator in the supervisor panel
+
+=== PRIORITY 3: HOURLY REPORT SYSTEM ===
+
+11. REPORT GENERATOR: Create src/lib/report-generator.ts:
+- Generates markdown status report containing:
+  - Active agents + status
+  - Tasks completed since last report
+  - Total cost since last report
+  - Commits since last report (scan git log across watched repos)
+  - Any mayday events
+  - Overall progress per repo (from PROGRESS.md)
+  - Active sorties status
+- Called on a configurable interval (default: hourly)
+
+12. REPORT STORAGE: New SQLite table:
+```sql
+CREATE TABLE flight_report (
+  id TEXT PRIMARY KEY,
+  generated_at TEXT DEFAULT (datetime('now')),
+  report_type TEXT DEFAULT 'hourly', -- hourly, daily, final, push
+  content TEXT NOT NULL, -- markdown
+  notion_page_id TEXT,
+  delivered_to TEXT, -- 'notion', 'email', 'both'
+  active_agents INTEGER,
+  tasks_completed INTEGER,
+  cost_since_last REAL,
+  commits_since_last INTEGER
+);
+```
+
+13. NOTION DELIVERY: When a report is generated:
+- Post to Notion as a comment on page 327260bf-0422-81d5-9aee-dee257c98384 (Currently Working On)
+- Mention @Curt Golden (user ID: 325d872b-594c-8181-aaca-000258e67f58) in each report
+- Include the report content as the comment body
+- Store the notion comment ID in flight_report.notion_page_id
+
+14. REPORT ARCHIVE PAGE: New page in the app at /reports (add to nav rail under OBSERVE):
+- List all past reports with: timestamp, type, active agents, tasks, cost
+- Click to view full markdown content
+- Filter by type (hourly/daily/final/push)
+- Search across report content
+
+15. PUSH UPDATE BUTTON: Add "Send Update Now" button:
+- In the stats bar (top of every page)
+- Generates an immediate report (type: 'push') and sends to Notion
+- Shows toast confirmation: "Update sent to Notion"
+- Also available per-sortie: "Send Sortie Update"
+
+16. CONFIGURABLE SCHEDULE: In Settings page, add "Reports" tab:
+- Frequency dropdown: 15min / 30min / hourly / 2h / daily / off
+- Delivery target: Notion page ID (text input)
+- Notion user to mention (text input, default: Curt's ID)
+- Enable/disable toggle
+- Test button: "Send Test Report"
+
+17. EMAIL DELIVERY STUB: Add delivery_channel config option: "notion" or "email" or "both"
+- For v2 just implement Notion
+- Email shows config fields (SMTP server, from address, to address) but displays "Coming in v3" badge
+- The report generator already produces markdown — email just needs a renderer later
+
+=== PRIORITY 4: BENCHMARKING MODEL ===
+
+18. TASK CATEGORIZER: Create src/lib/task-categorizer.ts:
+- Reads the first user prompt from each session's JSONL
+- Auto-classifies into categories using keyword matching:
+  - "bug" / "fix" / "error" / "broken" → bug-fix
+  - "build" / "create" / "add" / "implement" / "feature" → feature-build
+  - "refactor" / "rename" / "reorganize" / "clean" → refactor
+  - "test" / "qa" / "verify" / "check" → qa-test
+  - "analyze" / "review" / "assess" / "audit" → analysis
+  - "Read build-prompt" / "execute every task" / "Go." → full-session
+  - Default → uncategorized
+- Store category in sessions table (add column if needed)
+
+19. BASELINE BUILDER: Create src/lib/benchmark-engine.ts:
+- For each category, compute from all historical sessions:
+  - sample_count, avg_duration_sec, median_duration_sec, p90_duration_sec
+  - avg_tokens, avg_cost, success_rate (sessions that didn't error)
+- Store in SQLite table:
+```sql
+CREATE TABLE benchmark (
+  category TEXT PRIMARY KEY,
+  sample_count INTEGER,
+  avg_duration_sec REAL,
+  median_duration_sec REAL,
+  p90_duration_sec REAL,
+  avg_tokens INTEGER,
+  avg_cost REAL,
+  success_rate REAL,
+  last_computed TEXT
+);
+```
+- Recompute on app start and every hour
+
+20. REAL-TIME SCORING: For each running agent:
+- Determine its category (from first prompt)
+- Compare current duration to baseline
+- Health indicator: green (under median), amber (median to P90), red (over P90)
+- Show in session list and overview
+
+21. BENCHMARK DASHBOARD: New panel src/components/panels/benchmark-panel.tsx:
+- Table of all categories with: sample count, avg duration, P50, P90, avg cost, success rate
+- Highlight running agents against their baselines
+- Efficiency trend chart: average duration per week over time (are you getting faster?)
+- Model comparison: break down by model (Sonnet vs Opus vs Haiku) per category
+- Add to nav rail under OBSERVE section
+
+22. P90 ALERTS: When a running agent exceeds P90 for its category:
+- Show amber warning badge in stats bar: "⚠ 1 agent over P90"
+- Add alert to activity feed
+- Include in next hourly report
+- Show warning icon on the specific session in session list
+
+23. COST ANALYTICS: New panel or tab in benchmark panel:
+- Daily cost chart (bar chart, last 30 days)
+- Weekly cost trend (line chart)
+- Cost by repo (pie chart)
+- Cost by model (pie chart)
+- Projected monthly cost based on current velocity
+- Budget alert config: "Warn when daily cost exceeds $X"
+
+=== PRIORITY 5: PYTHON TRANSPONDER SDK ===
+
+24. SDK PACKAGE: Create python-sdk/ directory at repo root:
+```
+python-sdk/
+  flightdeck/
+    __init__.py
+    client.py      — Transponder class
+    models.py      — Pydantic models
+    decorators.py  — @tracked decorator
+    cli.py         — Click CLI
+  pyproject.toml
+  README.md
+```
+
+25. CORE METHODS in client.py:
+- Transponder(api_url, api_key) — constructor
+- takeoff(input: dict, label: str) — register new flight
+- ping(progress: float, message: str, metrics: dict) — heartbeat
+- landed(output: dict, summary: str) — successful completion
+- mayday(error: str, context: dict) — failure
+- fuel(provider, model, input_tokens, output_tokens) — cost tracking
+
+26. CONTEXT MANAGER + DECORATOR:
+```python
+# Context manager
+with Transponder(url).flight(label="my task") as f:
+    f.ping(0.5, "halfway")
+    # auto-lands on success, auto-maydays on exception
+
+# Decorator
+@Transponder(url).tracked(label="my function")
+def my_func():
+    pass  # auto-reports start/end/duration/errors
+```
+
+27. CLI: Click-based CLI in cli.py:
+- flightdeck status — show all active flights
+- flightdeck logs <flight_id> --follow — stream logs
+- flightdeck wrap <command> — wrap any shell command, auto-track
+- flightdeck ping --label <name> --progress 0.5 --message "halfway"
+- flightdeck push-update — trigger a push report
+
+28. API ENDPOINTS for SDK: Create src/app/api/transponder/ routes:
+- POST /api/transponder/takeoff — register flight
+- POST /api/transponder/ping — heartbeat update
+- POST /api/transponder/land — mark complete
+- POST /api/transponder/mayday — mark failed
+- POST /api/transponder/fuel — log cost data
+- GET /api/transponder/status — list all SDK-reported flights
+
+=== PRIORITY 6: AVIATION REBRAND (UI LABELS) ===
+
+29. NAV RAIL RENAME:
+- Overview → Cockpit
+- Agents → Hangar
+- Tasks → Sortie Board
+- Chat → Comms
+- Activity → Flight Activity
+- Logs → Black Box
+- Settings → Flight Ops
+- Add: Reports → Flight Reports (new from P3)
+- Add: Benchmarks → Performance (new from P4)
+- Add: Supervisor → ATC (new from P2)
+
+30. PANEL TITLE RENAMES: Update all panel component titles to use aviation terms
+
+31. STATUS LABEL RENAMES:
+- Active → In Flight
+- Completed/Done → Landed
+- Failed/Error → Mayday
+- Idle/Stale → Lost Contact
+- Queued → On Tarmac
+- Running → Airborne
+
+32. BRANDING:
+- Primary color: #6B9B37 (Golteris Green)
+- Header: "Flightdeck by Golteris" with logo
+- Copy brand SVGs from C:\Users\Curt\Documents\GTS\SAZERAC\golteris-platform\brand\ to public/ if they exist
+
+=== INSTRUCTIONS ===
+
+- Do not ask questions. Make reasonable decisions and document them in DECISIONS.md.
+- Update PROGRESS.md after each task with checkmark and timestamp.
+- Commit and push after each major milestone using "C:/Program Files/GitHub CLI/gh.exe".
+- Use pnpm only (never npm or yarn).
+- Do NOT break the build. Run pnpm build after major changes.
+- Be surgical — large codebase, change what you need.
+- For Windows paths in code, use forward slashes or double backslashes.
+
+NOTION UPDATES (milestones only):
+When you complete a major milestone, post a comment on Notion page 327260bf-0422-81d5-9aee-dee257c98384 mentioning @Curt Golden (user ID: 325d872b-594c-8181-aaca-000258e67f58) with a one-line summary.
+
+WHEN DONE OR ABOUT TO RUN OUT OF CONTEXT:
+- Final PROGRESS.md update
+- Final commit and push
+- Post Notion comment mentioning @Curt with final status
+
+Go.
